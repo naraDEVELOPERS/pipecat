@@ -32,6 +32,7 @@ from pipecat.services.tts_service import (
     WordTTSService,
 )
 from pipecat.transcriptions.language import Language
+from pipecat.utils.tracing.service_decorators import traced_tts
 
 # See .env.example for ElevenLabs configuration needed
 try:
@@ -183,7 +184,7 @@ class ElevenLabsTTSService(AudioContextWordTTSService):
         model: str = "eleven_flash_v2_5",
         url: str = "wss://api.elevenlabs.io",
         sample_rate: Optional[int] = None,
-        params: InputParams = InputParams(),
+        params: Optional[InputParams] = None,
         **kwargs,
     ):
         # Aggregating sentences still gives cleaner-sounding results and fewer
@@ -208,6 +209,8 @@ class ElevenLabsTTSService(AudioContextWordTTSService):
             sample_rate=sample_rate,
             **kwargs,
         )
+
+        params = params or ElevenLabsTTSService.InputParams()
 
         self._api_key = api_key
         self._url = url
@@ -251,14 +254,16 @@ class ElevenLabsTTSService(AudioContextWordTTSService):
     async def set_model(self, model: str):
         await super().set_model(model)
         logger.info(f"Switching TTS model to: [{model}]")
-        # No need to disconnect/reconnect for model changes with multi-context API
+        await self._disconnect()
+        await self._connect()
 
     async def _update_settings(self, settings: Mapping[str, Any]):
         prev_voice = self._voice_id
         await super()._update_settings(settings)
-        # If voice changes, we don't need to reconnect, just use a new context
         if not prev_voice == self._voice_id:
             logger.info(f"Switching TTS voice to: [{self._voice_id}]")
+            await self._disconnect()
+            await self._connect()
 
     async def start(self, frame: StartFrame):
         await super().start(frame)
@@ -385,7 +390,7 @@ class ElevenLabsTTSService(AudioContextWordTTSService):
             msg = json.loads(message)
             # Check if this message belongs to the current context
             # The default context may return null/None for context_id
-            received_ctx_id = msg.get("context_id")
+            received_ctx_id = msg.get("contextId")
             if (
                 self._context_id is not None
                 and received_ctx_id is not None
@@ -405,7 +410,7 @@ class ElevenLabsTTSService(AudioContextWordTTSService):
                 word_times = calculate_word_times(msg["alignment"], self._cumulative_time)
                 await self.add_word_timestamps(word_times)
                 self._cumulative_time = word_times[-1][1]
-            if msg.get("is_final"):
+            if msg.get("isFinal"):
                 logger.trace(f"Received final message for context {received_ctx_id}")
                 # Context has finished
                 if self._context_id == received_ctx_id:
@@ -445,6 +450,7 @@ class ElevenLabsTTSService(AudioContextWordTTSService):
                 msg = {"text": text, "context_id": self._context_id}
                 await self._websocket.send(json.dumps(msg))
 
+    @traced_tts
     async def run_tts(self, text: str) -> AsyncGenerator[Frame, None]:
         logger.debug(f"{self}: Generating TTS [{text}]")
 
@@ -510,7 +516,7 @@ class ElevenLabsHttpTTSService(WordTTSService):
         model: str = "eleven_flash_v2_5",
         base_url: str = "https://api.elevenlabs.io",
         sample_rate: Optional[int] = None,
-        params: InputParams = InputParams(),
+        params: Optional[InputParams] = None,
         **kwargs,
     ):
         super().__init__(
@@ -520,6 +526,8 @@ class ElevenLabsHttpTTSService(WordTTSService):
             sample_rate=sample_rate,
             **kwargs,
         )
+
+        params = params or ElevenLabsHttpTTSService.InputParams()
 
         self._api_key = api_key
         self._base_url = base_url
@@ -645,6 +653,7 @@ class ElevenLabsHttpTTSService(WordTTSService):
 
         return word_times
 
+    @traced_tts
     async def run_tts(self, text: str) -> AsyncGenerator[Frame, None]:
         """Generate speech from text using ElevenLabs streaming API with timestamps.
 

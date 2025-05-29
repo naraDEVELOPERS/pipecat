@@ -7,7 +7,7 @@
 import json
 import logging # Added import
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 from openai.types.chat import ChatCompletionMessageParam # Added import
 
@@ -47,7 +47,7 @@ class OpenAILLMService(BaseOpenAILLMService):
         self,
         *,
         model: str = "gpt-4.1",
-        params: BaseOpenAILLMService.InputParams = BaseOpenAILLMService.InputParams(),
+        params: Optional[BaseOpenAILLMService.InputParams] = None,
         **kwargs,
     ):
         super().__init__(model=model, params=params, **kwargs)

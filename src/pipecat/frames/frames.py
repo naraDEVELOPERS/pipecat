@@ -7,7 +7,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import (
-    TYPE_CHECKING,
     Any,
     Awaitable,
     Callable,
@@ -20,15 +19,10 @@ from typing import (
 )
 
 from pipecat.audio.vad.vad_analyzer import VADParams
-from pipecat.clocks.base_clock import BaseClock
 from pipecat.metrics.metrics import MetricsData
 from pipecat.transcriptions.language import Language
-from pipecat.utils.asyncio import BaseTaskManager
 from pipecat.utils.time import nanoseconds_to_str
 from pipecat.utils.utils import obj_count, obj_id
-
-if TYPE_CHECKING:
-    from pipecat.observers.base_observer import BaseObserver
 
 
 class KeypadEntry(str, Enum):
@@ -234,14 +228,15 @@ class TTSTextFrame(TextFrame):
 
 @dataclass
 class TranscriptionFrame(TextFrame):
-    """A text frame with transcription-specific data. Will be placed in the
-    transport's receive queue when a participant speaks.
+    """A text frame with transcription-specific data. The `result` field
+    contains the result from the STT service if available.
 
     """
 
     user_id: str
     timestamp: str
     language: Optional[Language] = None
+    result: Optional[Any] = None
 
     def __str__(self):
         return f"{self.name}(user: {self.user_id}, text: [{self.text}], language: {self.language}, timestamp: {self.timestamp})"
@@ -249,14 +244,16 @@ class TranscriptionFrame(TextFrame):
 
 @dataclass
 class InterimTranscriptionFrame(TextFrame):
-    """A text frame with interim transcription-specific data. Will be placed in
-    the transport's receive queue when a participant speaks.
+    """A text frame with interim transcription-specific data. The `result` field
+    contains the result from the STT service if available.
+
     """
 
     text: str
     user_id: str
     timestamp: str
     language: Optional[Language] = None
+    result: Optional[Any] = None
 
     def __str__(self):
         return f"{self.name}(user: {self.user_id}, text: [{self.text}], language: {self.language}, timestamp: {self.timestamp})"
@@ -294,6 +291,7 @@ class TranscriptionMessage:
 
     role: Literal["user", "assistant"]
     content: str
+    user_id: Optional[str] = None
     timestamp: Optional[str] = None
 
 
@@ -418,22 +416,19 @@ class TransportMessageFrame(DataFrame):
 
 
 @dataclass
-class DTMFFrame(DataFrame):
+class DTMFFrame:
     """A DTMF button frame"""
 
     button: KeypadEntry
 
 
 @dataclass
-class InputDTMFFrame(DTMFFrame):
-    """A DTMF button input"""
+class OutputDTMFFrame(DTMFFrame, DataFrame):
+    """A DTMF keypress output that will be queued. If your transport supports
+    multiple dial-out destinations, use the `transport_destination` field to
+    specify where the DTMF keypress should be sent.
 
-    pass
-
-
-@dataclass
-class OutputDTMFFrame(DTMFFrame):
-    """A DTMF button output"""
+    """
 
     pass
 
@@ -447,14 +442,11 @@ class OutputDTMFFrame(DTMFFrame):
 class StartFrame(SystemFrame):
     """This is the first frame that should be pushed down a pipeline."""
 
-    clock: BaseClock
-    task_manager: BaseTaskManager
     audio_in_sample_rate: int = 16000
     audio_out_sample_rate: int = 24000
     allow_interruptions: bool = False
     enable_metrics: bool = False
     enable_usage_metrics: bool = False
-    observer: Optional["BaseObserver"] = None
     report_only_initial_ttfb: bool = False
 
 
@@ -783,6 +775,24 @@ class VisionImageRawFrame(InputImageRawFrame):
     def __str__(self):
         pts = format_pts(self.pts)
         return f"{self.name}(pts: {pts}, text: [{self.text}], size: {self.size}, format: {self.format})"
+
+
+@dataclass
+class InputDTMFFrame(DTMFFrame, SystemFrame):
+    """A DTMF keypress input."""
+
+    pass
+
+
+@dataclass
+class OutputDTMFUrgentFrame(DTMFFrame, SystemFrame):
+    """A DTMF keypress output that will be sent right away. If your transport
+    supports multiple dial-out destinations, use the `transport_destination`
+    field to specify where the DTMF keypress should be sent.
+
+    """
+
+    pass
 
 
 #
