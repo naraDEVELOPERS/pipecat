@@ -205,6 +205,24 @@ class GeminiMultimodalLiveContext(OpenAILLMContext):
                 for part in content:
                     if part.get("type") == "text":
                         parts.append({"text": part.get("text")})
+                    elif part.get("type") == "image":
+                        # Handle OpenAI format image
+                        image_url = part.get("image_url", {}).get("url", "")
+                        if image_url.startswith("data:"):
+                            # Extract mime type and base64 data from data URL
+                            try:
+                                header, data = image_url.split(",", 1)
+                                mime_type = header.split(";")[0].split(":")[1]
+                                parts.append({
+                                    "inlineData": {
+                                        "mimeType": mime_type,
+                                        "data": data
+                                    }
+                                })
+                            except Exception as e:
+                                logger.error(f"Failed to parse image data URL: {e}")
+                        else:
+                            logger.warning(f"Unsupported image URL format: {image_url[:50]}")
                     else:
                         logger.warning(f"Unsupported content type: {str(part)[:80]}")
             else:
@@ -776,18 +794,40 @@ class GeminiMultimodalLiveLLMService(LLMService):
             elif role == "assistant":
                 role = "model"
 
-            content = item.get("content")
-            parts = []
-            if isinstance(content, str):
-                parts = [{"text": content}]
-            elif isinstance(content, list):
-                for part in content:
-                    if part.get("type") == "text":
-                        parts.append({"text": part.get("text")})
-                    else:
-                        logger.warning(f"Unsupported content type: {str(part)[:80]}")
+            # Check if message already has "parts" field (Gemini format)
+            if "parts" in item:
+                parts = item.get("parts", [])
             else:
-                logger.warning(f"Unsupported content type: {str(content)[:80]}")
+                content = item.get("content")
+                parts = []
+                if isinstance(content, str):
+                    parts = [{"text": content}]
+                elif isinstance(content, list):
+                    for part in content:
+                        if part.get("type") == "text":
+                            parts.append({"text": part.get("text")})
+                        elif part.get("type") == "image":
+                            # Handle OpenAI format image
+                            image_url = part.get("image_url", {}).get("url", "")
+                            if image_url.startswith("data:"):
+                                # Extract mime type and base64 data from data URL
+                                try:
+                                    header, data = image_url.split(",", 1)
+                                    mime_type = header.split(";")[0].split(":")[1]
+                                    parts.append({
+                                        "inlineData": {
+                                            "mimeType": mime_type,
+                                            "data": data
+                                        }
+                                    })
+                                except Exception as e:
+                                    logger.error(f"Failed to parse image data URL: {e}")
+                            else:
+                                logger.warning(f"Unsupported image URL format: {image_url[:50]}")
+                        else:
+                            logger.warning(f"Unsupported content type: {str(part)[:80]}")
+                else:
+                    logger.warning(f"Unsupported content type: {str(content)[:80]}")
             messages.append({"role": role, "parts": parts})
         if not messages:
             return
