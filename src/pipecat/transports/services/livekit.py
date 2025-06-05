@@ -364,12 +364,21 @@ class LiveKitInputTransport(BaseInputTransport):
         self._vad_analyzer: Optional[VADAnalyzer] = params.vad_analyzer
         self._resampler = create_default_resampler()
 
+        # Whether we have seen a StartFrame already.
+        self._initialized = False
+
     @property
     def vad_analyzer(self) -> Optional[VADAnalyzer]:
         return self._vad_analyzer
 
     async def start(self, frame: StartFrame):
         await super().start(frame)
+
+        if self._initialized:
+            return
+
+        self._initialized = True
+
         await self._client.start(frame)
         await self._client.connect()
         if not self._audio_in_task and self._params.audio_in_enabled:
@@ -447,8 +456,17 @@ class LiveKitOutputTransport(BaseOutputTransport):
         self._transport = transport
         self._client = client
 
+        # Whether we have seen a StartFrame already.
+        self._initialized = False
+
     async def start(self, frame: StartFrame):
         await super().start(frame)
+
+        if self._initialized:
+            return
+
+        self._initialized = True
+
         await self._client.start(frame)
         await self._client.connect()
         await self.set_transport_ready(frame)

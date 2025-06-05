@@ -1011,13 +1011,13 @@ class DailyInputTransport(BaseInputTransport):
         await self._transport.cleanup()
 
     async def start(self, frame: StartFrame):
+        # Parent start.
+        await super().start(frame)
+
         if self._initialized:
             return
 
         self._initialized = True
-
-        # Parent start.
-        await super().start(frame)
 
         # Setup client.
         await self._client.start(frame)
@@ -1167,7 +1167,7 @@ class DailyInputTransport(BaseInputTransport):
             "format": video_frame.color_format
             }
             frame.transport_source = video_source
-            await self.push_frame(frame)
+            await self.push_video_frame(frame)
             self._video_renderers[participant_id][video_source]["timestamp"] = curr_time
 
 
@@ -1202,13 +1202,13 @@ class DailyOutputTransport(BaseOutputTransport):
         await self._transport.cleanup()
 
     async def start(self, frame: StartFrame):
+        # Parent start.
+        await super().start(frame)
+
         if self._initialized:
             return
 
         self._initialized = True
-
-        # Parent start.
-        await super().start(frame)
 
         # Setup client.
         await self._client.start(frame)
