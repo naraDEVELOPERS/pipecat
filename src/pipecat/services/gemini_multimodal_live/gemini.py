@@ -1094,6 +1094,6 @@ class GeminiMultimodalLiveLLMService(LLMService):
         GeminiMultimodalLiveContext.upgrade(context)
         user = GeminiMultimodalLiveUserContextAggregator(context, params=user_params)
 
-        assistant_params.expect_stripped_words = False
+        assistant_params.expect_stripped_words = True
         assistant = GeminiMultimodalLiveAssistantContextAggregator(context, params=assistant_params)
         return GeminiMultimodalLiveContextAggregatorPair(_user=user, _assistant=assistant)
