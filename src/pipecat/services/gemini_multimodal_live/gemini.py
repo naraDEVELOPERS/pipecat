@@ -198,18 +198,40 @@ class GeminiMultimodalLiveContext(OpenAILLMContext):
             elif role == "assistant":
                 role = "model"
 
-            content = item.get("content")
-            parts = []
-            if isinstance(content, str):
-                parts = [{"text": content}]
-            elif isinstance(content, list):
-                for part in content:
-                    if part.get("type") == "text":
-                        parts.append({"text": part.get("text")})
-                    else:
-                        logger.warning(f"Unsupported content type: {str(part)[:80]}")
+            # Check if message already has "parts" field (Gemini format)
+            if "parts" in item:
+                parts = item.get("parts", [])
             else:
-                logger.warning(f"Unsupported content type: {str(content)[:80]}")
+                content = item.get("content")
+                parts = []
+                if isinstance(content, str):
+                    parts = [{"text": content}]
+                elif isinstance(content, list):
+                    for part in content:
+                        if part.get("type") == "text":
+                            parts.append({"text": part.get("text")})
+                        elif part.get("type") == "image":
+                            # Handle OpenAI format image
+                            image_url = part.get("image_url", {}).get("url", "")
+                            if image_url.startswith("data:"):
+                                # Extract mime type and base64 data from data URL
+                                try:
+                                    header, data = image_url.split(",", 1)
+                                    mime_type = header.split(";")[0].split(":")[1]
+                                    parts.append({
+                                        "inlineData": {
+                                            "mimeType": mime_type,
+                                            "data": data
+                                        }
+                                    })
+                                except Exception as e:
+                                    logger.error(f"Failed to parse image data URL: {e}")
+                            else:
+                                logger.warning(f"Unsupported image URL format: {image_url[:50]}")
+                        else:
+                            logger.warning(f"Unsupported content type: {str(part)[:80]}")
+                else:
+                    logger.warning(f"Unsupported content type: {str(content)[:80]}")
             messages.append({"role": role, "parts": parts})
         return messages
 
@@ -781,18 +803,40 @@ class GeminiMultimodalLiveLLMService(LLMService):
             elif role == "assistant":
                 role = "model"
 
-            content = item.get("content")
-            parts = []
-            if isinstance(content, str):
-                parts = [{"text": content}]
-            elif isinstance(content, list):
-                for part in content:
-                    if part.get("type") == "text":
-                        parts.append({"text": part.get("text")})
-                    else:
-                        logger.warning(f"Unsupported content type: {str(part)[:80]}")
+            # Check if message already has "parts" field (Gemini format)
+            if "parts" in item:
+                parts = item.get("parts", [])
             else:
-                logger.warning(f"Unsupported content type: {str(content)[:80]}")
+                content = item.get("content")
+                parts = []
+                if isinstance(content, str):
+                    parts = [{"text": content}]
+                elif isinstance(content, list):
+                    for part in content:
+                        if part.get("type") == "text":
+                            parts.append({"text": part.get("text")})
+                        elif part.get("type") == "image":
+                            # Handle OpenAI format image
+                            image_url = part.get("image_url", {}).get("url", "")
+                            if image_url.startswith("data:"):
+                                # Extract mime type and base64 data from data URL
+                                try:
+                                    header, data = image_url.split(",", 1)
+                                    mime_type = header.split(";")[0].split(":")[1]
+                                    parts.append({
+                                        "inlineData": {
+                                            "mimeType": mime_type,
+                                            "data": data
+                                        }
+                                    })
+                                except Exception as e:
+                                    logger.error(f"Failed to parse image data URL: {e}")
+                            else:
+                                logger.warning(f"Unsupported image URL format: {image_url[:50]}")
+                        else:
+                            logger.warning(f"Unsupported content type: {str(part)[:80]}")
+                else:
+                    logger.warning(f"Unsupported content type: {str(content)[:80]}")
             messages.append({"role": role, "parts": parts})
         if not messages:
             return
@@ -891,18 +935,13 @@ class GeminiMultimodalLiveLLMService(LLMService):
             return
         if not self._context:
             logger.error("Function calls are not supported without a context object.")
-
-        function_calls_llm = [
-            FunctionCallFromLLM(
+        for call in function_calls:
+            await self.call_function(
                 context=self._context,
-                tool_call_id=f.id,
-                function_name=f.name,
-                arguments=f.args,
+                tool_call_id=call.id,
+                function_name=call.name,
+                arguments=call.args,
             )
-            for f in function_calls
-        ]
-
-        await self.run_function_calls(function_calls_llm)
 
     @traced_gemini_live(operation="llm_response")
     async def _handle_evt_turn_complete(self, evt):
@@ -925,7 +964,7 @@ class GeminiMultimodalLiveLLMService(LLMService):
         self._bot_text_buffer = ""
         self._llm_output_buffer = ""
 
-        # Only push the TTSStoppedFrame if the bot is outputting audio
+        # Only push the TTSStoppedFrame the bot is outputting audio
         # when text is found, modalities is set to TEXT and no audio
         # is produced.
         if not text:
@@ -1054,6 +1093,6 @@ class GeminiMultimodalLiveLLMService(LLMService):
         GeminiMultimodalLiveContext.upgrade(context)
         user = GeminiMultimodalLiveUserContextAggregator(context, params=user_params)
 
-        assistant_params.expect_stripped_words = False
+        assistant_params.expect_stripped_words = True
         assistant = GeminiMultimodalLiveAssistantContextAggregator(context, params=assistant_params)
         return GeminiMultimodalLiveContextAggregatorPair(_user=user, _assistant=assistant)
