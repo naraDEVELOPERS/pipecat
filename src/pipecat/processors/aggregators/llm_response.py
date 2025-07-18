@@ -613,23 +613,22 @@ class LLMAssistantContextAggregator(LLMContextResponseAggregator):
 
         properties = frame.properties
 
+        # This will call the overridden method (e.g., the one modified in Step 1
+        # in OpenAIAssistantContextAggregator or GeminiMultimodalLiveAssistantContextAggregator)
         await self.handle_function_call_result(frame)
 
-        run_llm = False
+        # Determine if LLM should run based on properties or if it's the end of tool calls.
+        # This no longer depends on `frame.result` being truthy.
+        run_llm_after_tool = False
+        if properties and properties.run_llm is not None:
+            # If the tool call result has a run_llm property, use it
+            run_llm_after_tool = properties.run_llm
+        else:
+            # Default behavior is to run the LLM if there are no more function calls in progress
+            run_llm_after_tool = not bool(self._function_calls_in_progress)
 
-        # Run inference if the function call result requires it.
-        if frame.result:
-            if properties and properties.run_llm is not None:
-                # If the tool call result has a run_llm property, use it.
-                run_llm = properties.run_llm
-            elif frame.run_llm is not None:
-                # If the frame is indicating we should run the LLM, do it.
-                run_llm = frame.run_llm
-            else:
-                # If this is the last function call in progress, run the LLM.
-                run_llm = not bool(self._function_calls_in_progress)
-
-        if run_llm:
+        if run_llm_after_tool:
+            # Push context frame UPSTREAM to signal the LLMService to generate a response
             await self.push_context_frame(FrameDirection.UPSTREAM)
 
         # Call the `on_context_updated` callback once the function call result

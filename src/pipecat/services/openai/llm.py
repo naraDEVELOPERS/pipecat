@@ -5,8 +5,11 @@
 #
 
 import json
+import logging # Added import
 from dataclasses import dataclass
 from typing import Any, Optional
+
+from openai.types.chat import ChatCompletionMessageParam # Added import
 
 from pipecat.frames.frames import (
     FunctionCallCancelFrame,
@@ -22,6 +25,9 @@ from pipecat.processors.aggregators.llm_response import (
 )
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.services.openai.base_llm import BaseOpenAILLMService
+
+
+logger = logging.getLogger(__name__) # Added logger
 
 
 @dataclass
@@ -104,13 +110,36 @@ class OpenAIAssistantContextAggregator(LLMAssistantContextAggregator):
         )
 
     async def handle_function_call_result(self, frame: FunctionCallResultFrame):
-        if frame.result:
-            result = json.dumps(frame.result)
-            await self._update_function_call_result(frame.function_name, frame.tool_call_id, result)
+        # Original log line for when the aggregator receives the frame
+        logger.debug(
+            f"{self} (OpenAIAssistantContextAggregator) received function call result {frame.name}"
+        )
+
+        # Determine the content string for the tool message
+        if frame.result is not None:  # Explicitly check for None
+            content_str = json.dumps(frame.result)
         else:
-            await self._update_function_call_result(
-                frame.function_name, frame.tool_call_id, "COMPLETED"
-            )
+            # Maintain original behavior of sending "COMPLETED" when result is None
+            content_str = "COMPLETED"
+
+        tool_message: ChatCompletionMessageParam = {
+            "role": "tool",
+            "tool_call_id": frame.tool_call_id,
+            "content": content_str,
+        }
+
+        # 'name' is OpenAI-specific for tool calls, corresponds to function_name.
+        if frame.function_name:
+            tool_message["name"] = frame.function_name
+
+        # Directly add the tool message to the context (non-blocking within this specific step)
+        self._context.add_message(tool_message)
+
+        # Optional: Confirm message was added (can be removed after testing)
+        # logger.info(f"{self} (OpenAIAssistantContextAggregator) Added tool call result to context. Tool message added: {tool_message}. Current full context last message: {self._context.messages[-1] if self._context.messages else 'CONTEXT_EMPTY'}")
+
+        # The _update_function_call_result method can now be removed if its sole purpose
+        # was to add this message to the context, as its logic is fully inlined here.
 
     async def handle_function_call_cancel(self, frame: FunctionCallCancelFrame):
         await self._update_function_call_result(
