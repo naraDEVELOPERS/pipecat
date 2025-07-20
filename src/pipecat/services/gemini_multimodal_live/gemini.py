@@ -935,13 +935,21 @@ class GeminiMultimodalLiveLLMService(LLMService):
             return
         if not self._context:
             logger.error("Function calls are not supported without a context object.")
+            return
+        
+        # Convert Gemini function calls to Pipecat's FunctionCallFromLLM format
+        llm_function_calls = []
         for call in function_calls:
-            await self.call_function(
-                context=self._context,
-                tool_call_id=call.id,
+            llm_function_call = FunctionCallFromLLM(
                 function_name=call.name,
+                tool_call_id=call.id,
                 arguments=call.args,
+                context=self._context
             )
+            llm_function_calls.append(llm_function_call)
+        
+        # Run the function calls using the base class method
+        await self.run_function_calls(llm_function_calls)
 
     @traced_gemini_live(operation="llm_response")
     async def _handle_evt_turn_complete(self, evt):
